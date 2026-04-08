@@ -1,0 +1,7 @@
+body { font-family: system-ui, Arial, sans-serif; padding: 1rem; background:#f7fafc; color:#0f172a; }
+.container { max-width:900px; margin:0 auto; background:white; padding:1rem 1.25rem; border-radius:8px; box-shadow:0 8px 20px rgba(2,6,23,0.06); }
+textarea { width:100%; min-height:120px; padding:8px; }
+button { padding:8px 12px; margin-top:8px; }
+.result { border-top:1px solid #eee; padding-top:12px; margin-top:12px; }
+.summary { background:#fff8e1; padding:8px; border-radius:6px; margin-top:8px; }
+.citation { font-size:0.9rem; color:#374151; margin-top:6px; }
