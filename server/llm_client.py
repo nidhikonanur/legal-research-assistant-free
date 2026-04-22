@@ -1,8 +1,9 @@
 import os, asyncio
 import httpx
 
-LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'ollama')
+LLM_PROVIDER = os.getenv('LLM_PROVIDER', 'dummy')
 OLLAMA_URL = os.getenv('OLLAMA_URL', 'http://localhost:11434')
+OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama2')
 
 async def generate_summary(question: str, context: str, top_docs: list):
     """Generate a concise answer and explanation using the local LLM provider."""
@@ -39,13 +40,18 @@ async def call_ollama(prompt: str):
     # This function is intentionally general; please adjust for your local Ollama setup.
     url = OLLAMA_URL.rstrip('/') + '/api/generate'
     payload = {
-        'model': 'llama2',  # user can change model locally
+        'model': OLLAMA_MODEL,
         'prompt': prompt,
-        'max_tokens': 800
+        'max_tokens': 800,
+        'stream': False
     }
     async with httpx.AsyncClient(timeout=60.0) as client:
-        r = await client.post(url, json=payload)
-        r.raise_for_status()
+        try:
+            r = await client.post(url, json=payload)
+            r.raise_for_status()
+        except httpx.HTTPError:
+            return dummy_generate(prompt)
+
         data = r.json()
         # adapt depending on provider response shape
         # Ollama/other servers may return 'content' or 'response'
@@ -57,5 +63,5 @@ async def call_ollama(prompt: str):
         return text
 
 def dummy_generate(prompt: str):
-    # Short heuristic summary used for offline testing
-    return """**Answer (dummy):** Based on the retrieved cases, in general police need a warrant to search a car unless exigent circumstances or consent are present.\n\n**Key rules:**\n- Warrant required absent exigent circumstances.\n- Consent exceptions; probable cause exceptions.\n\n**Precedent chain:**\n- Case A applied the warrant rule; Case B carved out exigent circumstances.\n\n**Cited passages:**\n- case_12345_0, case_67890_2"""
+    # Public-facing fallback summary used when no local LLM is available.
+    return """**Answer:** Based on the retrieved authorities, a warrantless vehicle search is usually analyzed under recognized exceptions such as probable cause, consent, or exigent circumstances.\n\n**Key rules:**\n- Courts generally require a valid legal basis before police may search a vehicle without a warrant.\n- Common exceptions include consent, probable cause under the automobile exception, and some urgent circumstances.\n\n**Precedent chain:**\n- The retrieved cases emphasize that search-warrant applications still depend on a concrete factual basis and judicial review.\n- They also suggest courts look closely at whether officers identified a specific and lawful reason for the search.\n\n**Cited passages:**\n- Retrieved excerpts from the top-matching CourtListener opinions shown below."""

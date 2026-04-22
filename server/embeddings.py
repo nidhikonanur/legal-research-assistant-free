@@ -2,9 +2,12 @@ import os
 import chromadb
 from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
-import math
 import nltk
 nltk.download('punkt', quiet=True)
+try:
+    nltk.download('punkt_tab', quiet=True)
+except Exception:
+    pass
 from nltk.tokenize import sent_tokenize
 
 DEFAULT_CHUNK_SIZE = 800  # chars
@@ -36,9 +39,19 @@ def chunk_text(txt, chunk_size=DEFAULT_CHUNK_SIZE, overlap=200):
 class EmbeddingIndex:
     def __init__(self, persist_directory='vector_store'):
         self.persist_directory = persist_directory
-        self.client = chromadb.Client(Settings(chroma_db_impl='duckdb+parquet', persist_directory=self.persist_directory))
+        os.makedirs(self.persist_directory, exist_ok=True)
+        self.client = self._create_client()
         self.collection = None
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
+
+    def _create_client(self):
+        # Support both the newer PersistentClient API and older Settings-based clients.
+        persistent_client = getattr(chromadb, 'PersistentClient', None)
+        if persistent_client is not None:
+            return persistent_client(path=self.persist_directory)
+        return chromadb.Client(
+            Settings(chroma_db_impl='duckdb+parquet', persist_directory=self.persist_directory)
+        )
 
     def load_if_exists(self):
         # create or get collection
@@ -51,7 +64,8 @@ class EmbeddingIndex:
         if not texts:
             return
         self.load_if_exists()
-        ids = [f"{ids_prefix}_{i}" for i in range(self._next_id(), self._next_id()+len(texts))]
+        start_id = self._next_id()
+        ids = [f"{ids_prefix}_{i}" for i in range(start_id, start_id + len(texts))]
         # embed
         embs = self.model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
         docs = [{'id': ids[i], 'embedding': embs[i], 'metadata': metadatas[i] if metadatas else {}, 'text': texts[i]} for i in range(len(texts))]
@@ -59,22 +73,27 @@ class EmbeddingIndex:
         ids_list = [d['id'] for d in docs]
         metadatas_list = [d['metadata'] for d in docs]
         documents = [d['text'] for d in docs]
-        embeddings = [list(e) for e in embs]
+        embeddings = embs.tolist()
         # add to collection
         self.collection.add(ids=ids_list, metadatas=metadatas_list, documents=documents, embeddings=embeddings)
-        self.client.persist()
+        persist = getattr(self.client, 'persist', None)
+        if callable(persist):
+            persist()
 
     def _next_id(self):
-        # naive: count existing items
         try:
-            return len(self.collection.get()['ids']) if self.collection else 0
+            return self.collection.count() if self.collection else 0
         except Exception:
             return 0
 
     def similarity_search(self, query, k=4):
         self.load_if_exists()
         q_emb = self.model.encode([query], show_progress_bar=False, convert_to_numpy=True)[0].tolist()
-        results = self.collection.query(query_embeddings=[q_emb], n_results=k, include=['metadatas','documents','distances','ids'])
+        results = self.collection.query(
+            query_embeddings=[q_emb],
+            n_results=k,
+            include=['metadatas', 'documents', 'distances'],
+        )
         docs = []
         for i in range(len(results['ids'][0])):
             docs.append({'id': results['ids'][0][i], 'metadata': results['metadatas'][0][i], 'text': results['documents'][0][i], 'distance': results['distances'][0][i]})

@@ -1,55 +1,188 @@
-# Legal Research Assistant — Free RAG Version (No OpenAI)
+# Legal Research Assistant
 
-This project is a **free** alternative to the previous starter project. It uses:
+A React + FastAPI legal research app for public-facing case-law search workflows. It combines CourtListener search, local embeddings with Chroma, and optional local answer generation through Ollama.
 
-- **CourtListener** for case law data (free)
-- **Chroma (chromadb)** for vector storage (local, free)
-- **sentence-transformers** embeddings (local, free)
-- **A local LLM endpoint** (recommended: Ollama, Text-Generation-Inference, or local Llama) to produce natural-language summaries — **no OpenAI**
-  - The server can call an Ollama HTTP API at `http://localhost:11434` (configurable) or use a "synchronous" dummy generator for offline testing.
-- **FastAPI** backend + a small React (Vite) frontend
+## Current Status
 
-## Features
-- RAG pipeline: search CourtListener, fetch opinions, split into passages, embed and index in Chroma, then retrieve best passages for a query.
-- Summarization & doctrinal explanation via a local LLM endpoint (Ollama recommended) — configurable in `.env`.
-- Citation graph / precedent-chain: for each result, fetch citations (cases it cites and cases citing it) and present a small graph in the UI.
-- Persistent Chroma DB in `vector_store/` so you don't re-embed everything each run (you can re-index on demand).
+The app now supports:
 
-## Quickstart (Linux / macOS)
-1. Install Python 3.10+ and Node 18+.
-2. Copy `.env.example` to `.env` and configure:
-   - `LLM_PROVIDER` = `ollama` or `dummy`
-   - `OLLAMA_URL` = `http://localhost:11434` (if using Ollama)
-   - `COURTLISTENER_API_KEY` optional
-   - `PORT` server port
-3. Create a virtualenv and install Python deps:
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate
-   pip install -r server/requirements.txt
-   ```
-4. Install node deps and run client:
-   ```bash
-   cd client
-   npm install
-   npm run dev
-   ```
-5. Run the server:
-   ```bash
-   cd server
-   uvicorn main:app --reload --port 3000
-   ```
-6. Go to http://localhost:5173
+1. authenticated CourtListener search with a required API key
+2. opinion-text retrieval through the CourtListener opinions API
+3. local passage chunking, embedding, and similarity search
+4. a redesigned public-facing frontend with structured results
+5. answer generation through Ollama, with a clean fallback summary when Ollama is unavailable
 
-## Notes on local LLMs
-- **Ollama** is recommended for ease of use. Run a model like `llama2` or `mistral` locally and enable the Ollama HTTP server.
-- If you don't have a local LLM, set `LLM_PROVIDER=dummy` in `.env` to get short heuristic summaries (useful for offline testing).
+## Tech Stack
 
-## Files of interest
-- `server/main.py` — FastAPI app implementing RAG index, endpoints for search, index, and citation graph.
-- `server/embeddings.py` — embedding creation with sentence-transformers and Chroma helper functions.
-- `server/llm_client.py` — wrapper to call local LLM (Ollama) or dummy generator.
-- `client/` — React frontend that queries the server and visualizes results and precedent chains.
+- Frontend: React + Vite
+- Backend: FastAPI
+- Retrieval: ChromaDB + sentence-transformers
+- Data source: CourtListener REST API
+- Optional local LLM: Ollama
+
+## Project Structure
+
+```text
+.
+├── client/
+│   ├── src/
+│   │   ├── App.jsx
+│   │   ├── main.jsx
+│   │   └── styles.css
+│   ├── index.html
+│   ├── package.json
+│   └── vite.config.js
+├── server/
+│   ├── main.py
+│   ├── embeddings.py
+│   ├── llm_client.py
+│   ├── requirements.txt
+│   └── vector_store/
+├── .env.example
+└── README.md
+```
+
+## Requirements
+
+- Python 3.10+
+- Node.js 18+
+- npm
+- CourtListener API key
+- Optional: Ollama installed locally
+
+## Environment Variables
+
+Copy the example file first:
+
+```bash
+cp .env.example .env
+```
+
+Then configure:
+
+- `PORT`: backend port
+- `COURTLISTENER_API_KEY`: required for CourtListener search
+- `LLM_PROVIDER`: `ollama` or `dummy`
+- `OLLAMA_URL`: local Ollama endpoint, usually `http://localhost:11434`
+- `OLLAMA_MODEL`: model name to call through Ollama
+- `TOP_K`: number of retrieved passages returned to the answer stage
+
+Example:
+
+```env
+PORT=3000
+COURTLISTENER_API_KEY=your_token_here
+LLM_PROVIDER=ollama
+OLLAMA_URL=http://localhost:11434
+OLLAMA_MODEL=llama2
+TOP_K=4
+```
+
+## Running the App
+
+### Backend
+
+```bash
+cd /Users/nidhikonanur/Documents/Playground/legal-research-assistant-free/server
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --host 127.0.0.1 --port 3000
+```
+
+### Frontend
+
+Open a second terminal:
+
+```bash
+cd /Users/nidhikonanur/Documents/Playground/legal-research-assistant-free/client
+npm install
+npm run dev
+```
+
+Then open [http://localhost:5173](http://localhost:5173).
+
+## Ollama Setup
+
+If you want real local LLM answers instead of fallback summaries:
+
+1. install Ollama
+2. start the Ollama server
+3. make sure the configured model exists locally
+
+Typical example:
+
+```bash
+ollama serve
+```
+
+In another terminal:
+
+```bash
+ollama run llama2
+```
+
+If Ollama is not available, the backend will still return a clean summary response based on retrieved passages.
+
+## CourtListener Setup
+
+CourtListener now requires authenticated API requests for search. Create an account, generate an API token, and place it in `.env`:
+
+```env
+COURTLISTENER_API_KEY=your_token_here
+```
+
+Without this key, `/api/search` returns a clear configuration error.
+
+## API
+
+### `POST /api/search`
+
+Example request:
+
+```json
+{
+  "question": "Can police search my car without a warrant?",
+  "reindex": false,
+  "page_size": 5
+}
+```
+
+Example response shape:
+
+```json
+{
+  "question": "...",
+  "answer": "...",
+  "top_documents": [],
+  "search_results": [],
+  "citation_graph": []
+}
+```
+
+## Implementation Notes
+
+- The backend now uses the CourtListener opinions API for opinion text instead of scraping public HTML pages.
+- Chroma integration has been updated for newer client behavior.
+- Retrieved passages are embedded locally and persisted in `server/vector_store/`.
+- The frontend formats answer text into styled headings and bullet lists.
+- If a local LLM call fails, the app falls back to a public-friendly retrieval summary rather than exposing raw placeholder wording.
+
+## Known Limitations
+
+- Retrieval quality depends on the available CourtListener opinion text.
+- Repeated searches can add overlapping passages to the local vector store over time.
+- Citation graph output is still raw JSON and could be visualized more cleanly.
+- Without Ollama, the answer is a retrieval-based fallback summary rather than a model-generated memo.
+
+## Good Next Steps
+
+- add deduplication for repeated indexed passages
+- improve citation graph presentation
+- support filters for court, jurisdiction, and date
+- add tests for indexing and search behavior
+- make Ollama model selection configurable through the UI
 
 ## Disclaimer
-This is an educational tool. Do not rely on it for legal advice.
+
+This project is for educational and research use only. It is not legal advice.
